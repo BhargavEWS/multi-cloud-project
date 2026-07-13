@@ -1,10 +1,14 @@
 # Trimmed-down kube-prometheus-stack config for a portfolio demo cluster:
-# short retention, no persistent volumes, Grafana behind port-forward (no LB $).
+# short retention, no persistent volumes.
 grafana:
   enabled: true
   adminPassword: "" # set via --set on install if you want a fixed password; otherwise auto-generated
   service:
-    type: ClusterIP
+    # LoadBalancer (not ClusterIP) so it's reachable directly without going
+    # through Cloud Shell's Web Preview proxy, which Grafana's CSRF/Origin
+    # check rejects. Switch back to ClusterIP (~$18/mo LB cost) once you're
+    # done viewing/screenshotting the dashboard.
+    type: LoadBalancer
   defaultDashboardsEnabled: true
   sidecar:
     dashboards:
