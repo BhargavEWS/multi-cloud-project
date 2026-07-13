@@ -57,6 +57,26 @@ The loop that matters: **CI builds an image → commits the new tag back to
 `gitops/k8s/base` → ArgoCD notices the git change and syncs it to the
 cluster.** Nothing is ever `kubectl apply`'d by hand.
 
+## Screenshots
+
+| ArgoCD — app-of-apps synced | Grafana — SLO/DORA dashboard | Live API |
+|---|---|---|
+| ![ArgoCD apps](docs/screenshots/argocd-apps.png) | ![Grafana dashboard](docs/screenshots/grafana-dashboard.png) | ![API response](docs/screenshots/api-response.png) |
+
+*(Drop your own PNGs into [`docs/screenshots/`](docs/screenshots) with these
+exact filenames and they'll render above automatically.)*
+
+- **ArgoCD apps** — `kubectl port-forward svc/argocd-server -n argocd 8080:443`,
+  open `https://localhost:8080`, log in (`admin` / `kubectl -n argocd get secret
+  argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`), and
+  screenshot the four synced Applications (`root`, `taskflow-api`,
+  `observability`, `vault`).
+- **Grafana dashboard** — open the "TaskFlow — SLO & Deploy Frequency"
+  dashboard with real traffic flowing (curl the API a few times first so the
+  request-rate/latency panels aren't empty).
+- **Live API** — a terminal `curl` against the LoadBalancer IP showing
+  `/healthz` and a real `/tasks` response.
+
 ## What this proves (resume → repo)
 
 | Resume line | Where it lives here |
