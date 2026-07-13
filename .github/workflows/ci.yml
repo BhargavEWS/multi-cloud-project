@@ -66,7 +66,7 @@ jobs:
         run: docker build -t taskflow-api:${{ steps.tag.outputs.tag }} app/api
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.32.0
         with:
           image-ref: taskflow-api:${{ steps.tag.outputs.tag }}
           severity: "CRITICAL,HIGH"
