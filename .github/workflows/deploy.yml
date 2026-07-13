@@ -1,0 +1,101 @@
+name: deploy
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["infra/gcp/**"]
+  push:
+    branches: [main]
+    paths: ["infra/gcp/**"]
+  workflow_dispatch:
+    inputs:
+      bootstrap_argocd:
+        description: "Also (re)install ArgoCD + app-of-apps after terraform apply"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  terraform:
+    name: Terraform plan/apply (GCP)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/gcp
+    outputs:
+      applied: ${{ steps.apply_flag.outputs.applied }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA_EMAIL }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: terraform init
+        run: terraform init -backend-config="bucket=${{ secrets.GCP_STATE_BUCKET }}"
+
+      - name: terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan
+        run: |
+          terraform plan -no-color \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="region=${{ secrets.GCP_REGION }}" \
+            -out=tfplan
+
+      - name: terraform apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -auto-approve tfplan
+
+      - id: apply_flag
+        if: github.event_name != 'pull_request'
+        run: echo "applied=true" >> "$GITHUB_OUTPUT"
+
+  argocd-bootstrap:
+    name: Bootstrap ArgoCD on the cluster
+    needs: terraform
+    if: needs.terraform.outputs.applied == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Get cluster credentials
+        run: |
+          gcloud container clusters get-credentials multicloud-gitops-cluster \
+            --region "${{ secrets.GCP_REGION }}" --project "${{ secrets.GCP_PROJECT_ID }}"
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.1"
+
+      - name: Install/upgrade ArgoCD
+        run: |
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd --create-namespace \
+            -f gitops/argocd/install/values.yaml \
+            --wait --timeout 10m
+
+      - name: Apply app-of-apps
+        run: kubectl apply -f gitops/argocd/apps/root-app.yaml

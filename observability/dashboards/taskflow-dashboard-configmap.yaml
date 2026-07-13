@@ -1,0 +1,84 @@
+# Loaded automatically by the kube-prometheus-stack Grafana sidecar, which
+# watches all namespaces for ConfigMaps labeled grafana_dashboard=1
+# (enabled in observability/kube-prometheus-stack-values.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-slo-dora-dashboard
+  labels:
+    grafana_dashboard: "1"
+data:
+  taskflow-slo-dora.json: |
+    {
+      "title": "TaskFlow — SLO & Deploy Frequency",
+      "uid": "taskflow-slo-dora",
+      "tags": ["taskflow", "slo", "dora"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Request rate (req/s)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            { "expr": "sum(rate(http_requests_total{job=\"taskflow-api\"}[5m]))", "legendFormat": "requests/s" }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Error rate (%) — SLI",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "100 * sum(rate(http_requests_total{job=\"taskflow-api\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"taskflow-api\"}[5m]))",
+              "legendFormat": "5xx error %"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } },
+            "overrides": []
+          }
+        },
+        {
+          "id": 3,
+          "title": "P95 latency (SLO target: < 300ms)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"taskflow-api\"}[5m])) by (le))",
+              "legendFormat": "p95 latency (s)"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Pod restarts (last 6h)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[6h])) by (pod)",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Deploys (DORA: deployment frequency)",
+          "type": "annotations-list",
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+          "description": "Posted by the deploy pipeline each time a new image ships."
+        }
+      ],
+      "annotations": {
+        "list": [
+          { "name": "Deploys", "datasource": "-- Grafana --", "enable": true, "iconColor": "#5794F2", "tags": ["deploy"] }
+        ]
+      }
+    }

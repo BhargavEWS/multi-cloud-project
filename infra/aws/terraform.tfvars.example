@@ -1,0 +1,5 @@
+region              = "us-east-1"
+environment         = "portfolio"
+cost_center         = "personal-portfolio"
+cluster_name        = "multicloud-gitops-cluster"
+node_instance_type  = "t3.small"

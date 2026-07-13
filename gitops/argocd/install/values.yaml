@@ -1,0 +1,27 @@
+# Minimal ArgoCD install for a single-cluster portfolio demo.
+# Server stays ClusterIP (no LoadBalancer $) - access via:
+#   kubectl port-forward svc/argocd-server -n argocd 8080:443
+global:
+  domain: argocd.local
+
+server:
+  service:
+    type: ClusterIP
+  extraArgs:
+    - --insecure # TLS terminated by port-forward/ingress in front; simplifies the demo
+
+configs:
+  params:
+    server.insecure: true
+
+redis-ha:
+  enabled: false
+
+controller:
+  replicas: 1
+
+repoServer:
+  replicas: 1
+
+applicationSet:
+  enabled: false

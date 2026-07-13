@@ -1,0 +1,139 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  lint-test:
+    name: Lint & test app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/api/requirements-dev.txt
+
+      - run: pip install -r app/api/requirements-dev.txt
+
+      - name: ruff
+        run: ruff check app/api
+
+      - name: pytest
+        run: pytest -q
+
+  iac-scan:
+    name: Scan Terraform for misconfigurations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: tfsec (infra/gcp)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra/gcp
+          soft_fail: true
+
+      - name: tfsec (infra/aws)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra/aws
+          soft_fail: true
+
+  build-and-push:
+    name: Build image, scan, push (main only)
+    needs: [lint-test, iac-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: docker build -t taskflow-api:${{ steps.tag.outputs.tag }} app/api
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: taskflow-api:${{ steps.tag.outputs.tag }}
+          severity: "CRITICAL,HIGH"
+          exit-code: "0" # report, don't block the demo pipeline
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Tag & push
+        env:
+          IMAGE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/taskflow/taskflow-api
+        run: |
+          docker tag taskflow-api:${{ steps.tag.outputs.tag }} "$IMAGE:${{ steps.tag.outputs.tag }}"
+          docker push "$IMAGE:${{ steps.tag.outputs.tag }}"
+
+  bump-gitops-image:
+    name: Bump image tag for ArgoCD (GitOps)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set image name+tag in kustomization
+        env:
+          NEW_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          IMAGE_PATH: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/taskflow/taskflow-api
+        run: |
+          cd gitops/k8s/base
+          sed -i "s#newName:.*#newName: ${IMAGE_PATH}#" kustomization.yaml
+          sed -i "s/newTag:.*/newTag: ${NEW_TAG}/" kustomization.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gitops/k8s/base/kustomization.yaml
+          git diff --cached --quiet || git commit -m "gitops: deploy image ${{ needs.build-and-push.outputs.image_tag }} [skip ci]"
+          git push
+
+      - uses: google-github-actions/auth@v2
+        continue-on-error: true
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Record deploy as a Grafana annotation (DORA: deployment frequency)
+        continue-on-error: true # best-effort; skip quietly if the observability stack isn't up yet
+        run: |
+          gcloud container clusters get-credentials multicloud-gitops-cluster \
+            --region "${{ secrets.GCP_REGION }}" --project "${{ secrets.GCP_PROJECT_ID }}"
+          kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80 &
+          sleep 5
+          PASS=$(kubectl get secret -n observability kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d)
+          curl -s -u "admin:${PASS}" -X POST http://localhost:3000/api/annotations \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"deploy ${{ needs.build-and-push.outputs.image_tag }}\",\"tags\":[\"deploy\"]}"

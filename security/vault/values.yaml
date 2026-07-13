@@ -1,0 +1,31 @@
+# Dev-mode Vault for a portfolio demo: unsealed automatically, root token fixed,
+# no persistent storage. NOT a production configuration — real deployments use
+# auto-unseal + a real storage backend + short-lived tokens.
+server:
+  dev:
+    enabled: true
+    devRootToken: "root-demo-token"
+  ha:
+    enabled: false
+  standalone:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+
+injector:
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+ui:
+  enabled: true
+  serviceType: ClusterIP

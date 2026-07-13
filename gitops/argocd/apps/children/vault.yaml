@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.releases.hashicorp.com
+      chart: vault
+      targetRevision: 0.29.1
+      helm:
+        releaseName: vault
+        valueFiles:
+          - $values/security/vault/values.yaml
+    - repoURL: https://github.com/Sowmyak12/multi-cloud-project.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/Sowmyak12/multi-cloud-project.git
+      targetRevision: main
+      path: security/vault/init
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

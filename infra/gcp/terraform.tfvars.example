@@ -1,0 +1,7 @@
+project_id           = "your-gcp-free-trial-project-id"
+region               = "us-central1"
+environment          = "portfolio"
+cost_center          = "personal-portfolio"
+enable_budget_alert  = false
+# billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+# budget_amount_usd  = 25

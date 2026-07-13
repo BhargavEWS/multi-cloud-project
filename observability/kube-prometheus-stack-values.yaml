@@ -1,0 +1,44 @@
+# Trimmed-down kube-prometheus-stack config for a portfolio demo cluster:
+# short retention, no persistent volumes, Grafana behind port-forward (no LB $).
+grafana:
+  enabled: true
+  adminPassword: "" # set via --set on install if you want a fixed password; otherwise auto-generated
+  service:
+    type: ClusterIP
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    # Portfolio demo has one ServiceMonitor (taskflow-api) living in its own
+    # namespace, not the release namespace, so open up selection to all of them.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    storageSpec: {} # emptyDir-backed; this is a disposable demo cluster, not prod
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+# Scrape the taskflow-api pods via their prometheus.io/* annotations.
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
